@@ -7,6 +7,10 @@ description: Use when a user wants to deploy, update, inspect, recover, or plan 
 
 Use this playbook to ship local source with `copas up`. It starts the application lifecycle: project and app resolution, source packaging, server-side build, deployment, and deployment-output follow.
 
+## Guide the user simply
+
+The agent runs the technical commands. The user only needs to provide an email for the magic link, choose a project, open the link, and approve the go-live plan. Speak in the user's language, ask for one decision at a time, and use familiar terms such as **go live**, **project**, and **live URL**. Explain raw errors as the next useful step rather than showing a technical blocker.
+
 ## Fast path
 
 Run these actions in order for a deployment request.
@@ -35,17 +39,26 @@ copas info
 copas project
 ```
 
-`copas info` reports the active server and public-app domain. `copas project` is the session check.
+Run `copas info` and `copas project` as separate commands. Either command can return `HTTP 401` / `missing bearer token` before sign-in; treat that response as the next setup step, not as a deployment failure or approval request.
 
-When the project command requires sign-in, obtain the account email only when it has not already been supplied, then trigger the magic-link flow yourself:
+Ask for an email only when one has not already been supplied: **“Bagikan alamat email untuk menerima magic link Copas. Saya akan langsung memulai sign-in.”** Then trigger the magic-link flow yourself:
 
 ```bash
 copas login --email <email>
 ```
 
-Tell the user: **“Open the Copas magic link in your inbox; I will continue when sign-in completes.”** The command waits for browser confirmation and saves the session. When it completes, run `copas project` again and resume this same flow. A connection or server error is a target-server issue; report its exact next step rather than treating it as an authentication request.
+Copas sends the link to that email; no separate registration form is needed. Tell the user: **“Open the Copas magic link in your inbox; I will continue when sign-in completes.”** The command waits for browser confirmation and saves the session. When it completes, run `copas info` and `copas project` again. A connection or server error is a target-server issue; report its exact next step rather than treating it as an authentication request.
 
-### 3. Review the repository
+### 3. Choose the target project
+
+Use the `copas project` result before reviewing or planning the deployment:
+
+- When it reports no projects, ask: **“Nama project baru apa yang ingin dipakai untuk go live? Contoh: `tobee`.”** Record that name; `copas up --project <name>` creates it as part of the approved go-live plan.
+- When it lists projects, show their names and ask: **“App ini mau di-deploy ke project yang mana?”** Use the user's choice, unless the user already named a project.
+
+Use the selected project consistently in the repository plan, dependency provisioning, and every `copas up` command.
+
+### 4. Review the repository
 
 Inspect only the evidence needed to deploy:
 
@@ -74,16 +87,18 @@ Choose defaults from that evidence:
 
 Summarize the runtime, app context, port, dependency order, and any genuinely missing input. Routine defaults need no questionnaire.
 
-### 4. Ask once, then execute serially
+### 5. Ask once, then execute serially
 
-Before creating infrastructure, uploading source, or deploying, present one concise plan and ask once for approval of the whole mutation plan:
+Before creating infrastructure, uploading source, or deploying, present one concise plan and ask once for approval of the whole mutation plan. Name `copas up` as the **go-live deployment** action, rather than presenting it as an unexplained command:
 
 ```text
 Detected: <runtime>; <app/context>; <port>; <dependencies>
-Plan: <dependency 1 → app 1 → dependency/app 2, in exact order>
+Plan: <dependency 1 → deploy app 1 go live with copas up → dependency/app 2, in exact order>
 Needs: <only unresolved email, secret, domain, or dependency input; otherwise none>
 Verify: <public URL and evidenced health path>
 ```
+
+For a simple application, say: **“Plan: deploy this app go live with `copas up` from the repository root; no dependencies or secrets; verify the public URL at `/`. Proceed with this go-live deployment?”**
 
 After approval, complete every operation in dependency order. Finish one deployment before starting the next; this prevents infrastructure and service startup races.
 
