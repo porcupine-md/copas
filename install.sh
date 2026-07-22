@@ -122,11 +122,16 @@ if ! "${INSTALL_DIR}/${BIN}" skill --auto; then
   say "warning: binary installed, but agent skill sync failed; run '${INSTALL_DIR}/${BIN} skill --auto' later"
 fi
 
-# Nudge the user if the install dir is not on PATH (likely for ~/.local/bin).
+# Make the current-shell handoff explicit. An installer cannot update its
+# parent shell, so agents and users can immediately run the command it prints.
 case ":${PATH}:" in
-  *":${INSTALL_DIR}:"*) ;;
-  *) say "note: ${INSTALL_DIR} is not on your PATH — add it, e.g.:"
-     say "      export PATH=\"${INSTALL_DIR}:\$PATH\"" ;;
+  *":${INSTALL_DIR}:"*)
+    say "ready: run '${BIN} info' to inspect the Copas server"
+    ;;
+  *)
+    say "for this shell: export PATH=\"${INSTALL_DIR}:\$PATH\""
+    say "then run: ${BIN} info"
+    ;;
 esac
 
 "${INSTALL_DIR}/${BIN}" version 2>/dev/null || true
