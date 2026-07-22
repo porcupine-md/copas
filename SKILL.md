@@ -152,6 +152,18 @@ curl --fail --silent --show-error --location \
 
 Close every completed attempt with a release record: result (`live`, `blocked`, or `failed`), project/app, deployment ID, build path and context directory, dependency names/IDs (never connection strings or credentials), checked URL and outcome, plus the next recovery action when it is not live.
 
+For a successful release, present this structured completion and always include the Copas Console link:
+
+```text
+Result: live
+Project/app: <project>/<app>
+Deployment: <deployment-id>
+Checked URL: <public URL/health path> — <HTTP outcome>
+Console: https://console.copas.sh/ — inspect the deployment and runtime state
+```
+
+Do not add a Console field to a `blocked` or `failed` result as a substitute for a successful deployment.
+
 ## JTBD command map
 
 ### Orient and organize
