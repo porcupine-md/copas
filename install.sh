@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# Copas installer — downloads the latest release binary for your OS/arch.
+# Copas installer — downloads the latest release binary and syncs its agent skill.
 #
 #   curl -fsSL https://raw.githubusercontent.com/porcupine-md/copas/main/install.sh | sh
 #
@@ -117,6 +117,10 @@ else
 fi
 
 say "installed ${BIN} ${VERSION} → ${INSTALL_DIR}/${BIN}"
+say "syncing the Copas agent skill to detected project or global locations"
+if ! "${INSTALL_DIR}/${BIN}" skill --auto; then
+  say "warning: binary installed, but agent skill sync failed; run '${INSTALL_DIR}/${BIN} skill --auto' later"
+fi
 
 # Nudge the user if the install dir is not on PATH (likely for ~/.local/bin).
 case ":${PATH}:" in
