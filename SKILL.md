@@ -71,6 +71,36 @@ from **source** with **Railpack** — no Dockerfile, no manifest, no Docker, no
 - `copas info` prints the server's apps domain, registry host, and public URL so
   you know where apps land and whether in-cluster builds are available.
 
+## Managing databases
+
+One-click managed engines (postgres|mysql|mariadb|mongo|redis). Create the
+database **first**, then wire its connection string into the app as a secret env.
+
+```bash
+# Create and provision in one step; prints the connection string.
+copas db create <name> --project <p> --engine postgres --deploy
+
+# Or create now, provision later:
+copas db create <name> --project <p> --engine mysql
+copas db deploy <db-id>                   # provisions + prints connection string
+
+copas db list --project <p>               # list databases (add --json to parse)
+copas db get <db-id>                       # show one, incl. connection string
+copas db delete <db-id>                    # tear it down
+```
+
+Every `create --deploy`, `deploy`, and `get` prints the in-cluster
+`connectionString`. Pass `--json` to any of these for machine-readable output.
+Optional create flags: `--version`, `--username`, `--password` (default random),
+`--dbname` (default `app`), `--volume-size` (default `1Gi`).
+
+Wire it into an app as a secret so it never lands in the image:
+
+```bash
+CONN=$(copas db create app-db --project <p> --engine postgres --deploy --json | jq -r .connectionString)
+copas up --project <p> --name <app> --env DATABASE_URL="$CONN" --secret DATABASE_URL
+```
+
 ## Managing deployments
 
 ```bash

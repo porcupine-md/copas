@@ -1,14 +1,14 @@
 #!/usr/bin/env sh
 # Copas installer — downloads the latest release binary for your OS/arch.
 #
-#   curl -fsSL https://raw.githubusercontent.com/porcupine-md/copas.sh/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/porcupine-md/copas/main/install.sh | sh
 #
 # Environment overrides:
 #   COPAS_VERSION   release tag to install   (default: latest)
 #   COPAS_INSTALL   install directory        (default: /usr/local/bin)
 set -eu
 
-REPO="porcupine-md/copas.sh"
+REPO="porcupine-md/copas"
 BIN="copas"
 INSTALL_DIR="${COPAS_INSTALL:-/usr/local/bin}"
 VERSION="${COPAS_VERSION:-latest}"
