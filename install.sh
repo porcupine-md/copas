@@ -121,6 +121,8 @@ say "syncing the Copas agent skill to detected project or global locations"
 if ! "${INSTALL_DIR}/${BIN}" skill --auto; then
   say "warning: binary installed, but agent skill sync failed; run '${INSTALL_DIR}/${BIN} skill --auto' later"
 fi
+say "AGENT NEXT STEP: read the Copas deployment guide in this session:"
+say "  ${INSTALL_DIR}/${BIN} skill"
 
 # Make the current-shell handoff explicit. An installer cannot update its
 # parent shell, so agents and users can immediately run the command it prints.

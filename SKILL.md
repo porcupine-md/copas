@@ -54,7 +54,7 @@ Copas sends the link to that email; no separate registration form is needed. Tel
 Use the `copas project` result before reviewing or planning the deployment:
 
 - When it reports no projects, ask: **“Nama project baru apa yang ingin dipakai untuk go live? Contoh: `tobee`.”** Record that name; `copas up --project <name>` creates it as part of the approved go-live plan.
-- When it lists projects, show their names and ask: **“App ini mau di-deploy ke project yang mana?”** Use the user's choice, unless the user already named a project.
+- When it lists projects, show their names and ask: **“App ini mau di-deploy ke project yang mana? Pilih project yang ada, atau tulis nama project baru.”** Use the user's choice, unless the user already named a project. A new name is created by `copas up --project <name>` as part of the approved go-live plan.
 
 Use the selected project consistently in the repository plan, dependency provisioning, and every `copas up` command.
 
@@ -64,18 +64,23 @@ Inspect only the evidence needed to deploy:
 
 - runtime and build markers (`package.json`, lockfiles, `go.mod`, `pyproject.toml`, and equivalent);
 - start command, listening port, bind host, and an evidenced health endpoint;
+- whether the runtime invokes `npm start` and its lifecycle hooks (`prestart`), or a custom command that needs an explicit initializer;
 - app directory and independently deployable units in a monorepo;
-- environment templates, migrations, ORM configuration, and dependency variable names;
+- environment templates, ORM configuration, and dependency variable names;
+- migration, seed, and initialization scripts (for example `db:migrate`, `db:seed`, Prisma migrations, or `db/init.mjs`);
+- worker, scheduler, cron, and queue-consumer entrypoints, plus the database/cache/queue they require;
+- build-context rules (`.gitignore` / `.dockerignore`) that could exclude migration files, seed files, or database drivers;
 - durable files, workers, queues, caches, databases, and other dependencies.
 
 Build a dependency map before choosing deployment commands. For every app or service, identify what it needs at startup, the repository evidence for that relationship, its environment-variable names, and whether the dependency already exists. Then create one serial runbook:
 
 ```text
 managed database/cache → wait for its successful deployment → wire app environment
-→ deploy its dependent API/worker → verify → deploy the next dependent service
+→ deploy API or web container (run schema migration / required initialization at startup)
+→ verify → deploy worker, scheduler, or queue consumer → verify the next dependent service
 ```
 
-Start with stateful dependencies, then deploy services that consume them, then their public-facing dependents. Keep all deploys sequential, including monorepo units, so a later service never races an unavailable dependency.
+Start with stateful dependencies, then deploy an application container whose initializer completes before its server listens, then workers/schedulers that act on its data. Keep all deploys sequential, including monorepo units, so a later service never races an unavailable dependency or incomplete schema.
 
 Choose defaults from that evidence:
 
@@ -85,20 +90,31 @@ Choose defaults from that evidence:
 - use the generated `<app>.<appsDomain>` host unless the user supplied a domain;
 - choose Dockerfile only when the repository demonstrates that Railpack cannot build the application.
 
-Summarize the runtime, app context, port, dependency order, and any genuinely missing input. Routine defaults need no questionnaire.
+Summarize the runtime, app context, port, dependency order, initialization needs, and any genuinely missing input. Routine defaults need no questionnaire.
 
-### 5. Ask once, then execute serially
+### 5. Choose the app name
+
+Choose the Copas app name before preparing the deployment plan. It identifies the deployed service and forms the default public URL.
+
+Derive a readable default from the repository evidence: use the application manifest name (such as `package.json` `name`) when available, otherwise the app directory name. Normalize it to lowercase letters, digits, and hyphens. When the user has not already supplied an app name, always offer that default:
+
+> **“App ini mau dinamai apa di Copas? Default dari repo: `<derived-app-name>`.”**
+
+Use the user's chosen name, or the accepted default, in every `copas up --name <app>` command and in the final project/app summary. For a monorepo, offer one derived name for each deployable unit in the same naming step.
+
+### 6. Ask once, then execute serially
 
 Before creating infrastructure, uploading source, or deploying, present one concise plan and ask once for approval of the whole mutation plan. Name `copas up` as the **go-live deployment** action, rather than presenting it as an unexplained command:
 
 ```text
 Detected: <runtime>; <app/context>; <port>; <dependencies>
+Initialization: <in-cluster migration/seed action; otherwise none>
 Plan: <dependency 1 → deploy app 1 go live with copas up → dependency/app 2, in exact order>
-Needs: <only unresolved email, secret, domain, or dependency input; otherwise none>
+Needs: <only unresolved email, secret, domain, dependency, or initialization input; otherwise none>
 Verify: <public URL and evidenced health path>
 ```
 
-For a simple application, say: **“Plan: deploy this app go live with `copas up` from the repository root; no dependencies or secrets; verify the public URL at `/`. Proceed with this go-live deployment?”**
+For a simple application, say: **“Plan: deploy this app go live with `copas up` from the repository root; no dependencies, initialization, or secrets; verify the public URL at `/`. Proceed with this go-live deployment?”**
 
 After approval, complete every operation in dependency order. Finish one deployment before starting the next; this prevents infrastructure and service startup races.
 
@@ -129,6 +145,38 @@ provision dependency → wait for success → wire its env → deploy dependent 
 Deploy database and application separately. Deploy all other services one at a time according to their dependency order. Keep connection strings in local restricted files, not in chat, displayed commands, commits, or release summaries.
 
 If a dependency is already provisioned, inspect `copas db list` for its host and port. When its connection string is needed, capture `copas db get <database-id> --json` into a private temporary file using the same pattern above, then continue with the dependent service. If the repository does not establish a database engine or environment-variable mapping, ask for that one missing decision before provisioning.
+
+## Initialize schema and seed data in the cluster
+
+When review finds migrations, seed scripts, or required initial data, include that work in the same deployment plan. A Copas connection string uses an internal cluster hostname, so run database initialization from the application container as it starts in the cluster—not from the local laptop.
+
+Help adjust the repository when it needs an in-cluster initializer. First confirm that the selected start command invokes it: `prestart` runs with `npm start`, but not with a custom command such as `node server.js`. For a Node app that starts through `npm start`, an evidence-backed pattern is:
+
+```json
+{
+  "scripts": {
+    "prestart": "node db/init.mjs",
+    "start": "node server.js"
+  }
+}
+```
+
+Keep migrations and seed code out of build-time hooks such as `postinstall`: the build environment may not have the runtime database connection. Confirm `db/init.mjs`, migration files, and the database driver are included in the build context.
+
+The initializer creates required tables or runs the repository's migration command, then adds only the data the app needs to start. Make it safe to run repeatedly: use the migration tool's normal tracking, unique constraints/upserts, or a database lock when several replicas can start together. Describe any demo, dummy, or default records in the one approval plan; do not add them silently.
+
+Use this sequence:
+
+```text
+database deploy succeeds → app container starts inside the cluster → migration/initializer runs
+→ application server starts and becomes healthy → verify public URL → start worker/scheduler/consumer
+```
+
+For later releases, use expand → migrate → deploy compatible app → backfill → contract/cleanup in a later release. A small, fast, idempotent backfill can run in the initializer. For a large or slow backfill, deploy the compatible app first, then run a one-off task inside the cluster through the Web UI/API or a cluster operator; the current CLI has no one-off job command. Do not run that task from a laptop using the internal database hostname.
+
+Default to skipping demo data in production. Required reference data may be idempotently initialized; demo data should require an explicit flag such as `SEED_DEMO_DATA=true` for a preview/development environment and be named in the approval plan.
+
+If the repository already has a migration or seed command that is safe to run in the app runtime, reuse it instead of creating a second initializer. When the application has several replicas and no safe locking/idempotency mechanism, surface that as the one remaining decision before deployment.
 
 ## Deploy and verify
 
@@ -174,6 +222,7 @@ Console: https://console.copas.sh/
 | Railpack cannot detect the runtime | Point `--context-dir` at the app. Use Dockerfile when repository evidence supports it. |
 | Build or start fails | Read the deployment output, correct the matching source/configuration issue, and run `copas up` again. |
 | Dependency provisioning fails | Preserve the exact error, correct the dependency input, then resume from provisioning before the application deploy. |
+| Migration or seed fails | Read the deployment output, correct the in-cluster initializer or migration, then redeploy the application. |
 | Application cannot receive traffic | Check selected port, `$PORT`, bind address, domain/TLS, and startup output; redeploy after correction. |
 | Magic link expires | Run `copas login --email <email>` again and resume after it completes. |
 | Public health probe fails | Check DNS/TLS, ingress, application startup, port, and bind address before reporting the release live. |
