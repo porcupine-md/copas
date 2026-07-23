@@ -63,13 +63,13 @@ Use the selected project consistently in the repository plan, dependency provisi
 Inspect only the evidence needed to deploy:
 
 - runtime and build markers (`package.json`, lockfiles, `go.mod`, `pyproject.toml`, and equivalent);
-- start command, listening port, bind host, and an evidenced health endpoint;
+- process role (web, worker, scheduler, or consumer), effective runtime start command and target, listening port, bind host, and an evidenced health endpoint;
 - whether the runtime invokes `npm start` and its lifecycle hooks (`prestart`), or a custom command that needs an explicit initializer;
 - app directory and independently deployable units in a monorepo;
 - environment templates, ORM configuration, and dependency variable names;
 - migration, seed, and initialization scripts (for example `db:migrate`, `db:seed`, Prisma migrations, or `db/init.mjs`);
 - worker, scheduler, cron, and queue-consumer entrypoints, plus the database/cache/queue they require;
-- build-context rules (`.gitignore` / `.dockerignore`) that could exclude migration files, seed files, or database drivers;
+- build-context rules (`.gitignore` / `.dockerignore`) that could exclude startup targets, migration files, seed files, or runtime drivers;
 - durable files, workers, queues, caches, databases, and other dependencies.
 
 Build a dependency map before choosing deployment commands. For every app or service, identify what it needs at startup, the repository evidence for that relationship, its environment-variable names, and whether the dependency already exists. Then create one serial runbook:
@@ -92,7 +92,22 @@ Choose defaults from that evidence:
 
 Summarize the runtime, app context, port, dependency order, initialization needs, and any genuinely missing input. Routine defaults need no questionnaire.
 
-### 5. Choose the app name
+### 5. Preflight the runtime contract
+
+Before preparing the plan, establish this contract for every deployable unit:
+
+```text
+build artifact → effective start command → long-lived process
+→ bind host/port → startup dependencies → health response
+```
+
+Always inspect repository evidence for each link. The start command may come from a Dockerfile's final image configuration, a package script, a Procfile, framework configuration, or a compiled binary; do not require a particular runtime or command form. Confirm its target is packaged, it starts the intended process role, it stays in the foreground, and it binds the documented host and port.
+
+When a compatible local runtime is available, run a bounded smoke test before the plan: build and start the app without secrets, mounts, or cluster credentials; confirm the process stays up, then check its health endpoint when its dependencies are local. Clean up all temporary processes and artifacts. When the app requires an internal database or other cluster-only dependency, report that boundary as **needs cluster dependency** rather than assuming an application defect. A local runtime is optional; its absence does not block a deployment plan. State this warning in the plan: **“Warning: runtime smoke test skipped (`<reason>`); deploy proceeds with static preflight only.”**
+
+If the preflight identifies a broken start contract, help adjust the repository using its own evidence. List that correction and its verification in the one final approval; do not silently edit the repository or substitute an unproven entrypoint.
+
+### 6. Choose the app name
 
 Choose the Copas app name before preparing the deployment plan. It identifies the deployed service and forms the default public URL.
 
@@ -102,12 +117,13 @@ Derive a readable default from the repository evidence: use the application mani
 
 Use the user's chosen name, or the accepted default, in every `copas up --name <app>` command and in the final project/app summary. For a monorepo, offer one derived name for each deployable unit in the same naming step.
 
-### 6. Ask once, then execute serially
+### 7. Ask once, then execute serially
 
 Before creating infrastructure, uploading source, or deploying, present one concise plan and ask once for approval of the whole mutation plan. Name `copas up` as the **go-live deployment** action, rather than presenting it as an unexplained command:
 
 ```text
 Detected: <runtime>; <app/context>; <port>; <dependencies>
+Runtime preflight: <static/smoke outcome; or warning that smoke was skipped with its reason>
 Initialization: <in-cluster migration/seed action; otherwise none>
 Plan: <dependency 1 → deploy app 1 go live with copas up → dependency/app 2, in exact order>
 Needs: <only unresolved email, secret, domain, dependency, or initialization input; otherwise none>
@@ -220,7 +236,9 @@ Console: https://console.copas.sh/
 | --- | --- |
 | Packing fails | Use the evidenced app path and confirm required files are included in the source context. |
 | Railpack cannot detect the runtime | Point `--context-dir` at the app. Use Dockerfile when repository evidence supports it. |
-| Build or start fails | Read the deployment output, correct the matching source/configuration issue, and run `copas up` again. |
+| Build fails | Read the deployment output, correct the matching source/configuration issue, then rerun the preflight and `copas up`. |
+| Container/process exits immediately | Inspect the effective start command and exit status before blaming the cluster. An empty log with exit `0` usually means no long-lived application process was started; correct the evidenced start contract, rerun the preflight, then redeploy. If local smoke was skipped, state its reason in the recovery report. |
+| Readiness fails after startup | Inspect the startup dependency, selected port, bind host, and health endpoint; correct the evidenced mismatch, rerun the preflight, then redeploy. If local smoke was skipped, state its reason in the recovery report. |
 | Dependency provisioning fails | Preserve the exact error, correct the dependency input, then resume from provisioning before the application deploy. |
 | Migration or seed fails | Read the deployment output, correct the in-cluster initializer or migration, then redeploy the application. |
 | Application cannot receive traffic | Check selected port, `$PORT`, bind address, domain/TLS, and startup output; redeploy after correction. |
