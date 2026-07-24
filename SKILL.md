@@ -63,7 +63,7 @@ Use the selected project consistently in the repository plan, dependency provisi
 Inspect only the evidence needed to deploy:
 
 - runtime and build markers (`package.json`, lockfiles, `go.mod`, `pyproject.toml`, and equivalent);
-- process role (web, worker, scheduler, or consumer), effective runtime start command and target, listening port, bind host, and an evidenced health endpoint;
+- process role (web, worker, scheduler, or consumer), effective runtime start command and target, effective listening port, bind host, and an evidenced health endpoint; do not treat a framework default, `EXPOSE`, README, or a source-only Compose file as proof; for every HTTP-serving unit, establish how the process reads `$PORT` and binds `0.0.0.0`;
 - whether the runtime invokes `npm start` and its lifecycle hooks (`prestart`), or a custom command that needs an explicit initializer;
 - app directory and independently deployable units in a monorepo;
 - environment templates, ORM configuration, and dependency variable names;
@@ -72,7 +72,7 @@ Inspect only the evidence needed to deploy:
 - build-context rules (`.gitignore` / `.dockerignore`) that could exclude startup targets, migration files, seed files, or runtime drivers;
 - durable files, workers, queues, caches, databases, and other dependencies.
 
-Build a dependency map before choosing deployment commands. For every app or service, identify what it needs at startup, the repository evidence for that relationship, its environment-variable names, and whether the dependency already exists. Then create one serial runbook:
+Build a dependency map before choosing deployment commands. For every app or service, identify what it needs at startup, the repository evidence for that relationship, its environment-variable names, and whether the dependency already exists. For a managed database, record its engine and internal host:port plus the app variable that carries it; a database port is an internal connection setting, not a public application exposure setting. For every HTTP-serving unit, record its effective process port, bind host, `$PORT` source, and health path. Then create one serial runbook:
 
 ```text
 managed database/cache → wait for its successful deployment → wire app environment
@@ -86,11 +86,11 @@ Choose defaults from that evidence:
 
 - deploy source with `copas up` and Railpack by default;
 - use the repository root unless the app is evidenced in a subdirectory;
-- use the app's documented port, otherwise Copas's default `3000`; apps listen on `$PORT` and `0.0.0.0`;
+- use an evidenced effective app port; the documented/default `3000` is acceptable only after confirming the start contract; HTTP apps listen on `$PORT` and `0.0.0.0`; non-HTTP workers do not need a public port;
 - use the generated `<app>.<appsDomain>` host unless the user supplied a domain;
 - choose Dockerfile only when the repository demonstrates that Railpack cannot build the application.
 
-Summarize the runtime, app context, port, dependency order, initialization needs, and any genuinely missing input. Routine defaults need no questionnaire.
+Summarize the runtime, app context, port contract, dependency host:port mapping, initialization needs, and any genuinely missing input. A missing or contradictory app port, `$PORT`, bind host, health path, or dependency port blocks the plan until it is evidenced or resolved. Routine defaults need no questionnaire.
 
 ### 5. Preflight the runtime contract
 
@@ -98,12 +98,12 @@ Before preparing the plan, establish this contract for every deployable unit:
 
 ```text
 build artifact → effective start command → long-lived process
-→ bind host/port → startup dependencies → health response
+→ bind 0.0.0.0:$PORT → startup dependency host:port → health response
 ```
 
-Always inspect repository evidence for each link. The start command may come from a Dockerfile's final image configuration, a package script, a Procfile, framework configuration, or a compiled binary; do not require a particular runtime or command form. Confirm its target is packaged, it starts the intended process role, it stays in the foreground, and it binds the documented host and port.
+Always inspect repository evidence for each link. The start command may come from a Dockerfile's final image configuration, a package script, a Procfile, framework configuration, or a compiled binary; do not require a particular runtime or command form. Confirm its target is packaged, it starts the intended process role, and it stays in the foreground. For every HTTP-serving unit, prove the effective listen port, that the runtime reads `$PORT`, and that it binds `0.0.0.0`; compare that port with the intended `copas up --port` value and resolve any conflict before deployment. A non-HTTP worker, scheduler, or consumer should be identified as such rather than assigned a public port.
 
-When a compatible local runtime is available, run a bounded smoke test before the plan: build and start the app without secrets, mounts, or cluster credentials; confirm the process stays up, then check its health endpoint when its dependencies are local. Clean up all temporary processes and artifacts. When the app requires an internal database or other cluster-only dependency, report that boundary as **needs cluster dependency** rather than assuming an application defect. A local runtime is optional; its absence does not block a deployment plan. State this warning in the plan: **“Warning: runtime smoke test skipped (`<reason>`); deploy proceeds with static preflight only.”**
+When a compatible local runtime is available, run a bounded smoke test before the plan: build and start the app without secrets, mounts, or cluster credentials; confirm the process stays up and, for HTTP services, listens on the planned `$PORT` and bind address, then check its health endpoint when its dependencies are local. Clean up all temporary processes and artifacts. When the app requires an internal database or other cluster-only dependency, report that boundary as **needs cluster dependency** rather than assuming an application defect. A local runtime is optional; its absence does not block a deployment plan. State this warning in the plan: **“Warning: runtime smoke test skipped (`<reason>`); deploy proceeds with static preflight only.”**
 
 If the preflight identifies a broken start contract, help adjust the repository using its own evidence. List that correction and its verification in the one final approval; do not silently edit the repository or substitute an unproven entrypoint.
 
@@ -122,15 +122,17 @@ Use the user's chosen name, or the accepted default, in every `copas up --name <
 Before creating infrastructure, uploading source, or deploying, present one concise plan and ask once for approval of the whole mutation plan. Name `copas up` as the **go-live deployment** action, rather than presenting it as an unexplained command:
 
 ```text
-Detected: <runtime>; <app/context>; <port>; <dependencies>
+Detected: <runtime>; <app/context>; <dependencies>
+Port contract: <app process port via $PORT; bind host; copas up --port value; health path> per HTTP app; <none — non-HTTP worker> when applicable
+Dependency connection: <engine; internal host:port; app variable name> per managed dependency
 Runtime preflight: <static/smoke outcome; or warning that smoke was skipped with its reason>
 Initialization: <in-cluster migration/seed action; otherwise none>
 Plan: <dependency 1 → deploy app 1 go live with copas up → dependency/app 2, in exact order>
-Needs: <only unresolved email, secret, domain, dependency, or initialization input; otherwise none>
-Verify: <public URL and evidenced health path>
+Needs: <only unresolved email, secret, domain, dependency, initialization, or port-contract input; otherwise none>
+Verify: <public URL and the same evidenced health path>
 ```
 
-For a simple application, say: **“Plan: deploy this app go live with `copas up` from the repository root; no dependencies, initialization, or secrets; verify the public URL at `/`. Proceed with this go-live deployment?”**
+For a simple HTTP application, say: **“Plan: deploy this app go live with `copas up --port <evidenced-port>` from the repository root; it listens on `0.0.0.0:$PORT`; no dependencies, initialization, or secrets; verify the public URL at `/`. Proceed with this go-live deployment?”**
 
 After approval, complete every operation in dependency order. Finish one deployment before starting the next; this prevents infrastructure and service startup races.
 
@@ -143,14 +145,16 @@ db_json="$(mktemp)"
 copas db create <database> --project <project> --engine <engine> --deploy --json > "$db_json"
 ```
 
-A successful `--deploy` response is the CLI's readiness contract for this flow. Capture its connection string from the private temporary file, map it to the variable found in the repository (for example, `DATABASE_URL`), and write it only to a permission-restricted, gitignored env file. Remove temporary secret files when they are no longer needed.
+A successful `--deploy` response is the CLI's readiness contract for this flow. Capture its connection string from the private temporary file, confirm its internal host and engine-appropriate port match the selected database, map it to the variable found in the repository (for example, `DATABASE_URL`), and write it only to a permission-restricted, gitignored env file. Remove temporary secret files when they are no longer needed. Do not print the connection string or expose the database port publicly.
 
-Then deploy the dependent application:
+Then deploy the dependent HTTP application with its evidenced port explicitly:
 
 ```bash
-copas up --project <project> --name <app> --path . \
+copas up --project <project> --name <app> --path . --port <app-port> \
   --env-file <restricted-env-file> --secret <connection-variable>
 ```
+
+Before running it, ensure an existing `PORT` in the env file agrees with `<app-port>`; `copas up` only injects `$PORT` when the env does not already define it.
 
 For a monorepo or several services, use the same serial sequence for every unit:
 
@@ -160,7 +164,7 @@ provision dependency → wait for success → wire its env → deploy dependent 
 
 Deploy database and application separately. Deploy all other services one at a time according to their dependency order. Keep connection strings in local restricted files, not in chat, displayed commands, commits, or release summaries.
 
-If a dependency is already provisioned, inspect `copas db list` for its host and port. When its connection string is needed, capture `copas db get <database-id> --json` into a private temporary file using the same pattern above, then continue with the dependent service. If the repository does not establish a database engine or environment-variable mapping, ask for that one missing decision before provisioning.
+If a dependency is already provisioned, inspect `copas db list` for its host and port. When its connection string is needed, capture `copas db get <database-id> --json` into a private temporary file using the same pattern above, confirm the internal host:port and engine match the application's connection mapping, then continue with the dependent service. If the repository does not establish a database engine, port, or environment-variable mapping, ask for that one missing decision before provisioning.
 
 ## Initialize schema and seed data in the cluster
 
@@ -196,11 +200,13 @@ If the repository already has a migration or seed command that is safe to run in
 
 ## Deploy and verify
 
-A normal source deployment is:
+For an HTTP application whose port contract has been established, a normal source deployment is:
 
 ```bash
-copas up --project <project> --name <app> --path .
+copas up --project <project> --name <app> --path . --port <app-port>
 ```
+
+Always pass the evidenced `--port` explicitly, including `3000`; it makes the process `$PORT` and Copas routing contract reviewable. Do not pass a public port to a non-HTTP worker, or confuse this flag with a database's internal connection port.
 
 Add only evidence-backed flags as needed:
 
@@ -212,7 +218,7 @@ copas up --project <project> --name <app> \
   --domain <host> --tls
 ```
 
-`copas up` follows the server-side build and deploy output. Once it succeeds and reports a public host, verify the health endpoint found during repository review; use `/` when none is declared:
+`copas up` follows the server-side build and deploy output. Once it succeeds and reports a public host, verify the same health endpoint and port contract established during repository review; use `/` when none is declared:
 
 ```bash
 curl --fail --silent --show-error --location \
@@ -241,9 +247,19 @@ Console: https://console.copas.sh/
 | Readiness fails after startup | Inspect the startup dependency, selected port, bind host, and health endpoint; correct the evidenced mismatch, rerun the preflight, then redeploy. If local smoke was skipped, state its reason in the recovery report. |
 | Dependency provisioning fails | Preserve the exact error, correct the dependency input, then resume from provisioning before the application deploy. |
 | Migration or seed fails | Read the deployment output, correct the in-cluster initializer or migration, then redeploy the application. |
-| Application cannot receive traffic | Check selected port, `$PORT`, bind address, domain/TLS, and startup output; redeploy after correction. |
+| Application cannot receive traffic or is intermittent | Inspect whether the process is still alive and its actual listen address/port. Compare it with `$PORT`, the explicit `copas up --port` value, bind address, health path, domain/TLS, and startup output. Also recheck each dependency's internal host:port. Correct the evidenced mismatch, rerun the preflight, then redeploy. |
 | Magic link expires | Run `copas login --email <email>` again and resume after it completes. |
-| Public health probe fails | Check DNS/TLS, ingress, application startup, port, and bind address before reporting the release live. |
+| Public health probe fails | Check DNS/TLS, ingress, application startup, the same port contract, and bind address before reporting the release live. |
+
+## Fresh deployment after repeated failure
+
+Use a fresh app only after the port-contract and dependency checks above have been completed and the service still fails. It is a diagnostic escalation, not an automatic retry or replacement for root-cause analysis.
+
+First summarize the evidence already checked. Then ask the user for a new app name and offer a readable variant, without choosing it yourself:
+
+> **“Masalah masih terjadi setelah pemeriksaan port, health, dan dependency. Untuk uji deploy yang benar-benar baru, app baru ini mau dinamai apa? Rekomendasi: `<app>-v2`.”**
+
+Include creation of that new app in a fresh approval. Deploy the same reviewed source and only the already-validated port, dependency, and secret configuration under the user-selected name. Its default host will differ from the existing app; do not move a custom domain, delete the old app, or send traffic to the new app until the fresh URL is healthy and the user explicitly chooses the next action. Never use `recovery` as the app name or suffix.
 
 ## Command reference
 
@@ -256,7 +272,7 @@ db_json="$(mktemp)"                            # private temporary JSON file
 copas db create <name> --project <project> --engine postgres --deploy --json > "$db_json"
 copas db list --project <project>               # managed database inventory
 db_json="$(mktemp)"; copas db get <database-id> --json > "$db_json"
-copas up --project <project> --name <app>       # source build + deploy
+copas up --project <project> --name <app> --port <app-port> # HTTP source build + deploy
 copas deployment list --project <project>       # deployment history
 copas deployment status <deployment-id>         # recorded build/deploy output
 copas deployment redeploy <deployment-id>       # confirmed rollback/redeploy
