@@ -198,6 +198,37 @@ Default to skipping demo data in production. Required reference data may be idem
 
 If the repository already has a migration or seed command that is safe to run in the app runtime, reuse it instead of creating a second initializer. When the application has several replicas and no safe locking/idempotency mechanism, surface that as the one remaining decision before deployment.
 
+### Local and ad-hoc database work with a tunnel
+
+In-cluster initialization above stays the default for release-time schema and required seed data. Use a tunnel only for approved local/ad-hoc work: a one-off migration or staging/development seed; inspecting data or debugging an ORM/client; a small authorized data repair; or a small export/import with the engine's normal tools (`pg_dump`/`pg_restore`, `mysqldump`, etc.). Do not use it for routine backups, large imports/backfills, or release initialization.
+
+For an interactive client, keep this running in a separate process and point the client at its local address:
+
+```bash
+copas db tunnel <database-id> --port 5432   # forwards 127.0.0.1:5432; Ctrl-C closes it
+```
+
+For an agent/script, capture the credential-bearing local URI without displaying it, use it for one command, then clean up:
+
+```bash
+umask 077
+uri_file="$(mktemp)"
+copas db tunnel "$db_id" --print-uri >"$uri_file" &
+tunnel_pid=$!
+trap 'kill "$tunnel_pid" 2>/dev/null || true; rm -f "$uri_file"' EXIT
+while [ ! -s "$uri_file" ]; do
+  if ! kill -0 "$tunnel_pid" 2>/dev/null; then
+    wait "$tunnel_pid"; status=$?
+    [ "$status" -eq 0 ] && status=1
+    exit "$status"
+  fi
+  sleep 0.1
+done
+DATABASE_URL="$(<"$uri_file")" npm run db:seed
+```
+
+The tunnel proxies through the authenticated control-plane, so the database remains private in-cluster. Its local URI still carries real credentials: never put it in chat, logs, commits, or release records.
+
 ## Deploy and verify
 
 For an HTTP application whose port contract has been established, a normal source deployment is:
@@ -272,6 +303,7 @@ db_json="$(mktemp)"                            # private temporary JSON file
 copas db create <name> --project <project> --engine postgres --deploy --json > "$db_json"
 copas db list --project <project>               # managed database inventory
 db_json="$(mktemp)"; copas db get <database-id> --json > "$db_json"
+copas db tunnel <database-id> --port 5432       # local port → managed DB (seed/migrate from laptop)
 copas up --project <project> --name <app> --port <app-port> # HTTP source build + deploy
 copas deployment list --project <project>       # deployment history
 copas deployment status <deployment-id>         # recorded build/deploy output
