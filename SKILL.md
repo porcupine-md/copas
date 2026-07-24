@@ -27,10 +27,10 @@ if ! command -v copas >/dev/null 2>&1; then
   fi
 fi
 copas version
-copas skill --auto
+copas skill --sync
 ```
 
-`https://copas.sh/install` is the approved Copas bootstrap path for this skill. It installs the matching release binary and syncs the Copas skill; use it when `copas` is unavailable. Repository deployment begins only in the reviewed, approved flow below. Running `copas skill --auto` again is safe and refreshes the detected project-local or global agent target. Use `copas update` when the user asks to refresh an existing CLI. If no target is detected, note it briefly and continue using the installed CLI.
+`https://copas.sh/install` is the approved Copas bootstrap path for this skill. It installs the matching release binary and syncs the Copas skill; use it when `copas` is unavailable. Repository deployment begins only in the reviewed, approved flow below. Running `copas skill --sync` again is safe and refreshes the detected project-local or global agent target. Use `copas update` when the user asks to refresh an existing CLI. If no target is detected, note it briefly and continue using the installed CLI.
 
 ### 2. Orient and resume the session
 
@@ -267,7 +267,7 @@ Include creation of that new app in a fresh approval. Deploy the same reviewed s
 copas info                                      # active server and app domain
 copas project                                   # projects and authenticated session probe
 copas login --email <email>                     # magic-link sign-in
-copas skill --auto                              # refresh detected agent skill target
+copas skill --sync                              # refresh detected agent skill target
 db_json="$(mktemp)"                            # private temporary JSON file
 copas db create <name> --project <project> --engine postgres --deploy --json > "$db_json"
 copas db list --project <project>               # managed database inventory

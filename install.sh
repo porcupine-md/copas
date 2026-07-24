@@ -118,8 +118,8 @@ fi
 
 say "installed ${BIN} ${VERSION} → ${INSTALL_DIR}/${BIN}"
 say "syncing the Copas agent skill to detected project or global locations"
-if ! "${INSTALL_DIR}/${BIN}" skill --auto; then
-  say "warning: binary installed, but agent skill sync failed; run '${INSTALL_DIR}/${BIN} skill --auto' later"
+if ! "${INSTALL_DIR}/${BIN}" skill --sync; then
+  say "warning: binary installed, but agent skill sync failed; run '${INSTALL_DIR}/${BIN} skill --sync' later"
 fi
 say "AGENT NEXT STEP: read the Copas deployment guide in this session:"
 say "  ${INSTALL_DIR}/${BIN} skill"
